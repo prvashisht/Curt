@@ -10,35 +10,12 @@ const int steps_per_rev = 200;
 const int delay_time_us = 1000;
 const int pause_time_ms = 1000;
 
+bool overriden = false;
+
 const char* ssid     = WIFI_SSID;
 const char* password = WIFI_PW;
 WiFiServer server(80);
 
-void connect_to_wifi() {
-  delay(10);
-
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println();
-  Serial.println("WiFi connected.");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  ArduinoOta.setHostname("LastRoomCurtain");
-  setupOTA();
-
-  server.begin();
-}
-bool overriden = false;
 void wifi_client_check() {
   WiFiClient client = server.available();
 
@@ -47,7 +24,7 @@ void wifi_client_check() {
     String currentLine = "";
     while (client.connected()) {
       if (client.available()) {             // if there's bytes to read from the client,
-        ArduinoOta.handle();
+        ArduinoOTA.handle();
         char c = client.read();             // read a byte, then
         Serial.write(c);                    // print it out the serial monitor
         if (c == '\n') {                    // if the byte is a newline character
@@ -104,7 +81,7 @@ void wifi_client_check() {
 void spin(int steps) {
   if (!steps) steps = 1;
   for (int i = 0; i < steps; i++) {
-    ArduinoOta.handle();
+    ArduinoOTA.handle();
     digitalWrite(PIN_STEP, !digitalRead(PIN_STEP));
     delayMicroseconds(delay_time_us);
   }
@@ -121,12 +98,11 @@ void setup() {
   pinMode(PIN_BUTTON_CL, INPUT);
   pinMode(PIN_BUTTON_AC, INPUT);
 
-  connect_to_wifi();
-  
+  setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
+  server.begin();
 }
 void loop() {
-  ArduinoOta.handle();
-  Serial.println(digitalRead(PIN_ENABLE));
+  ArduinoOTA.handle();
 
   wifi_client_check();
 
@@ -142,6 +118,5 @@ void loop() {
   }
 
   if (!digitalRead(PIN_ENABLE) && !digitalRead(PIN_BUTTON_CL) && !digitalRead(PIN_BUTTON_AC) && !overriden) digitalWrite(PIN_ENABLE, HIGH);
-//  if ((digitalRead(PIN_BUTTON_CL) || digitalRead(PIN_BUTTON_AC)) && !digitalRead(PIN_ENABLE)) spin(1);
   if (!digitalRead(PIN_ENABLE)) spin(1);
 }
