@@ -1,14 +1,24 @@
 #include <Credentials.h>
 #include <CustomOTA.h>
 
-const int PIN_STEP = 18;
-const int PIN_DIR = 19;
+const int PIN_SLEEP = 5;
+const int PIN_DIR = 16;
+const int PIN_STEP = 17;
+const int PIN_RESET = 18;
+const int PIN_MS3 = 19;
+const int PIN_MS2 = 21;
+const int PIN_MS1 = 22;
 const int PIN_ENABLE = 23;
-const int PIN_BUTTON_CL = 34;
-const int PIN_BUTTON_AC = 35;
+const int PIN_LED = 25;
+const int PIN_BUTTONS = 34;
 const int steps_per_rev = 200;
 const int delay_time_us = 1000;
 const int pause_time_ms = 1000;
+
+const int BTN_ONE_THRESHOLD = 2750;
+const int BTN_TWO_THRESHOLD = 3500;
+const int BTN_THRESHOLD_BUFFER = 250;
+int button_selected = 0;
 
 bool overriden = false;
 
@@ -59,13 +69,11 @@ void wifi_client_check() {
           digitalWrite(PIN_DIR, LOW);
           digitalWrite(PIN_ENABLE, LOW);
           overriden= true;
-          spin(1);
         }
         if (currentLine.endsWith("GET /ACL")) {
           digitalWrite(PIN_DIR, HIGH);
           digitalWrite(PIN_ENABLE, LOW);
           overriden= true;
-          spin(1);
         }
         if (currentLine.endsWith("GET /END")) {
           digitalWrite(PIN_ENABLE, HIGH);
@@ -86,37 +94,67 @@ void spin(int steps) {
     delayMicroseconds(delay_time_us);
   }
 }
+int get_selected_button(int pin_value) {
+  if (pin_value > 3000) {
+    return 2;
+  } else if (pin_value > 1000) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PIN_STEP, OUTPUT);
+  pinMode(PIN_SLEEP, OUTPUT);
   pinMode(PIN_DIR, OUTPUT);
-
+  pinMode(PIN_STEP, OUTPUT);
+  pinMode(PIN_RESET, OUTPUT);
+  pinMode(PIN_MS3, OUTPUT);
+  pinMode(PIN_MS2, OUTPUT);
+  pinMode(PIN_MS1, OUTPUT);
   pinMode(PIN_ENABLE, OUTPUT);
-  digitalWrite(PIN_ENABLE, HIGH);
+  pinMode(PIN_LED, OUTPUT);
 
-  pinMode(PIN_BUTTON_CL, INPUT);
-  pinMode(PIN_BUTTON_AC, INPUT);
+  pinMode(PIN_BUTTONS, INPUT);
+
+  // default settings
+  digitalWrite(PIN_SLEEP, HIGH); // not sleeping
+  digitalWrite(PIN_DIR, HIGH); // anti clockwise
+  digitalWrite(PIN_STEP, LOW); // anti clockwise
+  digitalWrite(PIN_RESET, HIGH); // don't reset and accept step inputs
+  digitalWrite(PIN_MS3, LOW); // TODO: Write microstepping hashmap
+  digitalWrite(PIN_MS2, LOW); // no microstepping
+  digitalWrite(PIN_MS1, LOW);
+  digitalWrite(PIN_ENABLE, HIGH); // disable the motor
+  digitalWrite(PIN_LED, LOW); // disable the motor
 
   setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
   server.begin();
 }
 void loop() {
   ArduinoOTA.handle();
-
   wifi_client_check();
 
-  if (digitalRead(PIN_ENABLE)) {
-    if (digitalRead(PIN_BUTTON_CL)) {
-      digitalWrite(PIN_DIR, LOW);
-      digitalWrite(PIN_ENABLE, LOW);
-    }
-    if (digitalRead(PIN_BUTTON_AC)) {
-      digitalWrite(PIN_DIR, HIGH);
-      digitalWrite(PIN_ENABLE, LOW);
-    }
+  int button_value = analogRead(PIN_BUTTONS);
+  if (get_selected_button(button_value) == 1) {
+    digitalWrite(PIN_DIR, LOW);
+    digitalWrite(PIN_ENABLE, LOW);
+    
+  } else if (get_selected_button(button_value) == 2) {
+    digitalWrite(PIN_DIR, HIGH);
+    digitalWrite(PIN_ENABLE, LOW);
+    digitalWrite(PIN_LED, HIGH);
   }
 
-  if (!digitalRead(PIN_ENABLE) && !digitalRead(PIN_BUTTON_CL) && !digitalRead(PIN_BUTTON_AC) && !overriden) digitalWrite(PIN_ENABLE, HIGH);
-  if (!digitalRead(PIN_ENABLE)) spin(1);
+  if (!digitalRead(PIN_ENABLE) && !get_selected_button(button_value) && !overriden) {
+    digitalWrite(PIN_ENABLE, HIGH);
+  }
+
+  if (!digitalRead(PIN_ENABLE)) {
+    digitalWrite(PIN_LED, HIGH);
+    spin(1);
+  } else {
+    digitalWrite(PIN_LED, LOW);
+  }
 }
