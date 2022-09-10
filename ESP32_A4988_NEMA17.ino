@@ -1,5 +1,6 @@
 #include <Credentials.h>
 #include <CustomOTA.h>
+#include <Stepper_Motor.h>
 
 const int PIN_SLEEP = 5;
 const int PIN_DIR = 16;
@@ -10,15 +11,21 @@ const int PIN_MS2 = 21;
 const int PIN_MS1 = 22;
 const int PIN_ENABLE = 23;
 const int PIN_LED = 25;
+const int PIN_LIMIT_SWITCH = 26;
 const int PIN_BUTTONS = 34;
-const int steps_per_rev = 200;
+
+const int TOTAL_STEPS = 200*44;
 const int delay_time_us = 1000;
 const int pause_time_ms = 1000;
 
 const int BTN_ONE_THRESHOLD = 2750;
 const int BTN_TWO_THRESHOLD = 3500;
 const int BTN_THRESHOLD_BUFFER = 250;
-int button_selected = 0;
+
+const int BUTTON_ANTI_CLOCKWISE = 1;
+const int BUTTON_CLOCKWISE = 2;
+
+Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
 
 bool overriden = false;
 
@@ -66,17 +73,17 @@ void wifi_client_check() {
 
         // Check to see if the client request was "GET /CL" or "GET /ACL":
         if (currentLine.endsWith("GET /CL")) {
-          digitalWrite(PIN_DIR, LOW);
-          digitalWrite(PIN_ENABLE, LOW);
+          motor.clockwise();
+          motor.enable();
           overriden= true;
         }
         if (currentLine.endsWith("GET /ACL")) {
-          digitalWrite(PIN_DIR, HIGH);
-          digitalWrite(PIN_ENABLE, LOW);
+          motor.antiClockwise();
+          motor.enable();
           overriden= true;
         }
         if (currentLine.endsWith("GET /END")) {
-          digitalWrite(PIN_ENABLE, HIGH);
+          motor.disable();
           overriden= false;
         }
       }
@@ -84,6 +91,16 @@ void wifi_client_check() {
     // close the connection:
     client.stop();
     Serial.println("Client Disconnected.");
+  }
+}
+
+int get_selected_button(int pin_value) {
+  if (pin_value > 3000) {
+    return 2;
+  } else if (pin_value > 1000) {
+    return 1;
+  } else {
+    return 0;
   }
 }
 void spin(int steps) {
@@ -94,40 +111,27 @@ void spin(int steps) {
     delayMicroseconds(delay_time_us);
   }
 }
-int get_selected_button(int pin_value) {
-  if (pin_value > 3000) {
-    return 2;
-  } else if (pin_value > 1000) {
-    return 1;
-  } else {
-    return 0;
-  }
+void open_curtains() {
+  motor.antiClockwise();
+  motor.enable();
+  spin(TOTAL_STEPS);
+  motor.disable();
+}
+void close_curtains() {
+  motor.clockwise();
+  motor.enable();
+  spin(TOTAL_STEPS);
+  motor.disable();
 }
 void setup() {
   Serial.begin(115200);
 
-  pinMode(PIN_SLEEP, OUTPUT);
-  pinMode(PIN_DIR, OUTPUT);
-  pinMode(PIN_STEP, OUTPUT);
-  pinMode(PIN_RESET, OUTPUT);
-  pinMode(PIN_MS3, OUTPUT);
-  pinMode(PIN_MS2, OUTPUT);
-  pinMode(PIN_MS1, OUTPUT);
-  pinMode(PIN_ENABLE, OUTPUT);
   pinMode(PIN_LED, OUTPUT);
 
+  pinMode(PIN_LIMIT_SWITCH, INPUT);
   pinMode(PIN_BUTTONS, INPUT);
 
-  // default settings
-  digitalWrite(PIN_SLEEP, HIGH); // not sleeping
-  digitalWrite(PIN_DIR, HIGH); // anti clockwise
-  digitalWrite(PIN_STEP, LOW); // anti clockwise
-  digitalWrite(PIN_RESET, HIGH); // don't reset and accept step inputs
-  digitalWrite(PIN_MS3, LOW); // TODO: Write microstepping hashmap
-  digitalWrite(PIN_MS2, LOW); // no microstepping
-  digitalWrite(PIN_MS1, LOW);
-  digitalWrite(PIN_ENABLE, HIGH); // disable the motor
-  digitalWrite(PIN_LED, LOW); // disable the motor
+  digitalWrite(PIN_LED, LOW);
 
   setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
   server.begin();
@@ -136,24 +140,26 @@ void loop() {
   ArduinoOTA.handle();
   wifi_client_check();
 
-  int button_value = analogRead(PIN_BUTTONS);
-  if (get_selected_button(button_value) == 1) {
-    digitalWrite(PIN_DIR, LOW);
-    digitalWrite(PIN_ENABLE, LOW);
-    
-  } else if (get_selected_button(button_value) == 2) {
-    digitalWrite(PIN_DIR, HIGH);
-    digitalWrite(PIN_ENABLE, LOW);
-    digitalWrite(PIN_LED, HIGH);
+  int button_value = analogRead(PIN_BUTTONS),
+    pressed_button = get_selected_button(button_value);
+
+  if (digitalRead(PIN_ENABLE)) {
+    if (pressed_button == BUTTON_CLOCKWISE) {
+      motor.clockwise();
+      motor.enable();
+    } else if (pressed_button == BUTTON_ANTI_CLOCKWISE) {
+      motor.antiClockwise();
+      motor.enable();
+    }
   }
 
-  if (!digitalRead(PIN_ENABLE) && !get_selected_button(button_value) && !overriden) {
-    digitalWrite(PIN_ENABLE, HIGH);
+  if (digitalRead(PIN_LIMIT_SWITCH) || !(digitalRead(PIN_ENABLE) || pressed_button) && !overriden) {
+    motor.disable();
   }
 
   if (!digitalRead(PIN_ENABLE)) {
     digitalWrite(PIN_LED, HIGH);
-    spin(1);
+    motor.takeSteps();
   } else {
     digitalWrite(PIN_LED, LOW);
   }
