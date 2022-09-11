@@ -1,6 +1,5 @@
 #include <Credentials.h>
 #include <CustomOTA.h>
-#include <Stepper_Motor.h>
 #include <Curtains.h>
 
 const int PIN_SLEEP = 5;
@@ -26,8 +25,7 @@ const int BTN_THRESHOLD_BUFFER = 250;
 const int BUTTON_ANTI_CLOCKWISE = 1;
 const int BUTTON_CLOCKWISE = 2;
 
-// Stepper_Motor curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
-Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, 5);
+Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, TOTAL_STEPS);
 
 bool overriden = false;
 
