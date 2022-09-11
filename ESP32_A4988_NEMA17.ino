@@ -1,6 +1,7 @@
 #include <Credentials.h>
 #include <CustomOTA.h>
 #include <Stepper_Motor.h>
+#include <Curtains.h>
 
 const int PIN_SLEEP = 5;
 const int PIN_DIR = 16;
@@ -25,7 +26,8 @@ const int BTN_THRESHOLD_BUFFER = 250;
 const int BUTTON_ANTI_CLOCKWISE = 1;
 const int BUTTON_CLOCKWISE = 2;
 
-Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
+// Stepper_Motor curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
+Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, 5);
 
 bool overriden = false;
 
@@ -73,17 +75,15 @@ void wifi_client_check() {
 
         // Check to see if the client request was "GET /CL" or "GET /ACL":
         if (currentLine.endsWith("GET /CL")) {
-          motor.clockwise();
-          motor.enable();
+          curtain.close(200*10);
           overriden= true;
         }
         if (currentLine.endsWith("GET /ACL")) {
-          motor.antiClockwise();
-          motor.enable();
+          curtain.open(200*10);
           overriden= true;
         }
         if (currentLine.endsWith("GET /END")) {
-          motor.disable();
+          curtain.disable();
           overriden= false;
         }
       }
@@ -111,18 +111,6 @@ void spin(int steps) {
     delayMicroseconds(delay_time_us);
   }
 }
-void open_curtains() {
-  motor.antiClockwise();
-  motor.enable();
-  spin(TOTAL_STEPS);
-  motor.disable();
-}
-void close_curtains() {
-  motor.clockwise();
-  motor.enable();
-  spin(TOTAL_STEPS);
-  motor.disable();
-}
 void setup() {
   Serial.begin(115200);
 
@@ -145,21 +133,19 @@ void loop() {
 
   if (digitalRead(PIN_ENABLE)) {
     if (pressed_button == BUTTON_CLOCKWISE) {
-      motor.clockwise();
-      motor.enable();
+      curtain.close();
     } else if (pressed_button == BUTTON_ANTI_CLOCKWISE) {
-      motor.antiClockwise();
-      motor.enable();
+      curtain.open();
     }
   }
 
   if (digitalRead(PIN_LIMIT_SWITCH) || !(digitalRead(PIN_ENABLE) || pressed_button) && !overriden) {
-    motor.disable();
+    curtain.disable();
   }
 
+  // TODO: Move LED status logic into library
   if (!digitalRead(PIN_ENABLE)) {
     digitalWrite(PIN_LED, HIGH);
-    motor.takeSteps();
   } else {
     digitalWrite(PIN_LED, LOW);
   }
