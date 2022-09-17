@@ -1,5 +1,8 @@
 #include <Credentials.h>
 #include <CustomOTA.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <WebSerial.h>
 #include <Curtains.h>
 
 const int PIN_SLEEP = 5;
@@ -14,7 +17,7 @@ const int PIN_LED = 25;
 const int PIN_LIMIT_SWITCH = 26;
 const int PIN_BUTTONS = 34;
 
-const int TOTAL_STEPS = 200*44;
+const int TOTAL_STEPS = 200 * 44;
 const int delay_time_us = 1000;
 const int pause_time_ms = 1000;
 
@@ -25,126 +28,201 @@ const int BTN_THRESHOLD_BUFFER = 250;
 const int BUTTON_ANTI_CLOCKWISE = 1;
 const int BUTTON_CLOCKWISE = 2;
 
-Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, TOTAL_STEPS);
-
 bool overriden = false;
 
-const char* ssid     = WIFI_SSID;
-const char* password = WIFI_PW;
-WiFiServer server(80);
+const char *ssid = WIFI_SSID;
+const char *password = WIFI_PW;
 
-void wifi_client_check() {
-  WiFiClient client = server.available();
+AsyncWebServer server(80);
+Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, TOTAL_STEPS);
 
-  if (client) {
-    Serial.println("New Client.");
-    String currentLine = "";
-    while (client.connected()) {
-      if (client.available()) {             // if there's bytes to read from the client,
-        ArduinoOTA.handle();
-        char c = client.read();             // read a byte, then
-        Serial.write(c);                    // print it out the serial monitor
-        if (c == '\n') {                    // if the byte is a newline character
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <title>ESP Web Server</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <style>
+    html {font-family: Arial; display: inline-block; text-align: center;}
+    h2 {font-size: 3.0rem;}
+    p {font-size: 3.0rem;}
+    body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
+    .switch {position: relative; display: inline-block; width: 120px; height: 68px} 
+    .switch input {display: none}
+    .slider {position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 6px}
+    .slider:before {position: absolute; content: ""; height: 52px; width: 52px; left: 8px; bottom: 8px; background-color: #fff; -webkit-transition: .4s; transition: .4s; border-radius: 3px}
+    input:checked+.slider {background-color: #b30000}
+    input:checked+.slider:before {-webkit-transform: translateX(52px); -ms-transform: translateX(52px); transform: translateX(52px)}
+  </style>
+</head>
+<body>
+  <h2>ESP Web Server</h2>
+  %BUTTONPLACEHOLDER%
+<script>function toggleCheckbox(element) {
+  var xhr = new XMLHttpRequest();
+//  if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=1", true); }
+//  else { xhr.open("GET", "/update?output="+element.id+"&state=0", true); }
+  if(element.checked){ xhr.open("GET", "/open", true); }
+  else { xhr.open("GET", "/close", true); }
+  xhr.send();
+}
+</script>
+</body>
+</html>
+)rawliteral";
 
-          // if the current line is blank, you got two newline characters in a row.
-          // that's the end of the client HTTP request, so send a response:
-          if (currentLine.length() == 0) {
-            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-            // and a content-type so the client knows what's coming, then a blank line:
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println();
+// Replaces placeholder with button section in your web page
+String processor(const String &var)
+{
+  // Serial.println(var);
+  if (var == "BUTTONPLACEHOLDER")
+  {
+    String buttons = "";
+    buttons += "<h4>Curtain</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"2\" " + outputState(2) + "><span class=\"slider\"></span></label>";
+    // buttons += "<h4>Output - GPIO 4</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"4\" " + outputState(4) + "><span class=\"slider\"></span></label>";
+    // buttons += "<h4>Output - GPIO 33</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"33\" " + outputState(33) + "><span class=\"slider\"></span></label>";
+    return buttons;
+  }
+  return String();
+}
 
-            // the content of the HTTP response follows the header:
-            client.print("Click <a href=\"/CL\">here</a> to spin clockwise.<br>");
-            client.print("Click <a href=\"/ACL\">here</a> to spin anti-clockwise.<br>");
-            client.print("Click <a href=\"/END\">here</a> to stop spinning.<br>");
-
-            // The HTTP response ends with another blank line:
-            client.println();
-            // break out of the while loop:
-            break;
-          } else {    // if you got a newline, then clear currentLine:
-            currentLine = "";
-          }
-        } else if (c != '\r') {  // if you got anything else but a carriage return character,
-          currentLine += c;      // add it to the end of the currentLine
-        }
-
-        // Check to see if the client request was "GET /CL" or "GET /ACL":
-        if (currentLine.endsWith("GET /CL")) {
-          curtain.close(200*10);
-          overriden= true;
-        }
-        if (currentLine.endsWith("GET /ACL")) {
-          curtain.open(200*10);
-          overriden= true;
-        }
-        if (currentLine.endsWith("GET /END")) {
-          curtain.disable();
-          overriden= false;
-        }
-      }
-    }
-    // close the connection:
-    client.stop();
-    Serial.println("Client Disconnected.");
+int isClosed = false;
+String outputState(int output)
+{
+  if (isClosed)
+  {
+    return "checked";
+  }
+  else
+  {
+    return "";
   }
 }
 
-int get_selected_button(int pin_value) {
-  if (pin_value > 3000) {
+void recvMsg(uint8_t *data, size_t len)
+{
+  WebSerial.println("Received Data...");
+  String d = "";
+  for (int i = 0; i < len; i++)
+  {
+    d += char(data[i]);
+  }
+  Serial.println(d);
+  if (d == "open")
+  {
+    WebSerial.println("opening");
+    curtain.open(200 * 15);
+    overriden = true;
+    isClosed = false;
+    WebSerial.print("isClosed - ");
+    WebSerial.println(isClosed);
+  }
+  if (d == "close")
+  {
+    WebSerial.println("closing");
+    curtain.close(200 * 15);
+    overriden = true;
+    isClosed = true;
+    WebSerial.print("isClosed - ");
+    WebSerial.println(isClosed);
+  }
+}
+int get_selected_button(int pin_value)
+{
+  if (pin_value > 3000)
+  {
     return 2;
-  } else if (pin_value > 1000) {
+  }
+  else if (pin_value > 1000)
+  {
     return 1;
-  } else {
+  }
+  else
+  {
     return 0;
   }
 }
-void spin(int steps) {
-  if (!steps) steps = 1;
-  for (int i = 0; i < steps; i++) {
+void spin(int steps)
+{
+  if (!steps)
+    steps = 1;
+  for (int i = 0; i < steps; i++)
+  {
     ArduinoOTA.handle();
     digitalWrite(PIN_STEP, !digitalRead(PIN_STEP));
     delayMicroseconds(delay_time_us);
   }
 }
-void setup() {
-  Serial.begin(115200);
-
+void setup()
+{
   pinMode(PIN_LED, OUTPUT);
+  pinMode(1, OUTPUT);
 
   pinMode(PIN_LIMIT_SWITCH, INPUT);
   pinMode(PIN_BUTTONS, INPUT);
 
+  setCpuFrequencyMhz(80);
+
   digitalWrite(PIN_LED, LOW);
 
+  Serial.begin(115200);
   setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
+  Serial.println(WiFi.localIP());
+
+  WebSerial.begin(&server);
+  WebSerial.msgCallback(recvMsg);
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send_P(200, "text/html", index_html, processor); });
+
+  server.on("/open", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    curtain.open(200 * 20);
+    overriden = true;
+    WebSerial.println("open-ing");
+    isClosed = false;
+    request->send(200, "text/plain", "OK"); });
+
+  server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request)
+            {
+    curtain.close(200 * 20);
+    overriden = true;
+    WebSerial.println("close-ing");
+    isClosed = true;
+    request->send(200, "text/plain", "OK"); });
   server.begin();
 }
-void loop() {
+void loop()
+{
   ArduinoOTA.handle();
-  wifi_client_check();
 
   int button_value = analogRead(PIN_BUTTONS),
-    pressed_button = get_selected_button(button_value);
+      pressed_button = get_selected_button(button_value);
 
-  if (digitalRead(PIN_ENABLE)) {
-    if (pressed_button == BUTTON_CLOCKWISE) {
+  if (digitalRead(PIN_ENABLE))
+  {
+    if (pressed_button == BUTTON_CLOCKWISE)
+    {
       curtain.close();
-    } else if (pressed_button == BUTTON_ANTI_CLOCKWISE) {
+    }
+    else if (pressed_button == BUTTON_ANTI_CLOCKWISE)
+    {
       curtain.open();
     }
   }
 
-  if (digitalRead(PIN_LIMIT_SWITCH) || !(digitalRead(PIN_ENABLE) || pressed_button) && !overriden) {
+  if (digitalRead(PIN_LIMIT_SWITCH) || !(digitalRead(PIN_ENABLE) || pressed_button) && !overriden)
+  {
     curtain.disable();
   }
 
   // TODO: Move LED status logic into library
-  if (!digitalRead(PIN_ENABLE)) {
+  if (!digitalRead(PIN_ENABLE))
+  {
     digitalWrite(PIN_LED, HIGH);
-  } else {
+  }
+  else
+  {
     digitalWrite(PIN_LED, LOW);
   }
 }
