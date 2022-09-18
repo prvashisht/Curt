@@ -1,46 +1,51 @@
-#include <Credentials.h>
-#include <CustomOTA.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <WebSerial.h>
+#include <Credentials.h> // contains WiFi credentials, could contain any secret key
+#include <CustomOTA.h> // enables WiFi, sets up OTA updates
+#include <AsyncTCP.h> // Base for Async Web Server
+#include <ESPAsyncWebServer.h> // Creates asynchronous web servers
+#include <WebSerial.h> // enables reading "Serial" output over web (acts as an emulator)
 #include <Curtains.h>
 
-const int PIN_SLEEP = 5;
-const int PIN_DIR = 16;
-const int PIN_STEP = 17;
-const int PIN_RESET = 18;
-const int PIN_MS3 = 19;
-const int PIN_MS2 = 21;
-const int PIN_MS1 = 22;
-const int PIN_ENABLE = 23;
-const int PIN_LED = 25;
-const int PIN_LIMIT_SWITCH = 26;
-const int PIN_BUTTONS = 34;
+const byte PIN_SLEEP = 5;
+const byte PIN_DIR = 16;
+const byte PIN_STEP = 17;
+const byte PIN_RESET = 18;
+const byte PIN_MS3 = 19;
+const byte PIN_MS2 = 21;
+const byte PIN_MS1 = 22;
+const byte PIN_ENABLE = 23;
+const byte PIN_LED = 25;
+const byte PIN_LIMIT_SWITCH = 26;
+const byte PIN_BUTTONS = 34;
 
-const int TOTAL_STEPS = 200 * 44;
-const int delay_time_us = 1000;
-const int pause_time_ms = 1000;
+bool isLimitSwitchPressed = false;
+enum inputButtons { NONE, BUTTON_CLOCKWISE, BUTTON_ANTI_CLOCKWISE };
+inputButtons pressedButton = NONE;
 
-const int BTN_ONE_THRESHOLD = 2750;
-const int BTN_TWO_THRESHOLD = 3500;
-const int BTN_THRESHOLD_BUFFER = 250;
+bool isCurtainClosed = false;
+enum webOverrideStatus { STAY, OPEN_CURTAIN, CLOSE_CURTAIN };
+webOverrideStatus webOverride = STAY;
 
-const int BUTTON_ANTI_CLOCKWISE = 1;
-const int BUTTON_CLOCKWISE = 2;
+Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
 
-bool overriden = false;
+void setupWiFi() {
+    const char *ssid = WIFI_SSID;
+    const char *password = WIFI_PW;
+    IPAddress staticIP(192, 168, 178, 85);
+    IPAddress gateway(192, 168, 178, 1);
+    IPAddress subnet(255, 255, 255, 0);
+    IPAddress dns1(192, 168, 178, 13); // optional
+    IPAddress dns2(1, 1, 1, 1);        // optional
 
-const char *ssid = WIFI_SSID;
-const char *password = WIFI_PW;
-IPAddress staticIP(192, 168, 178, 85);
-IPAddress gateway(192, 168, 178, 1);
-IPAddress subnet(255, 255, 255, 0);
-IPAddress dns1(192, 168, 178, 13); // optional
-IPAddress dns2(1, 1, 1, 1);        // optional
+    if (!WiFi.config(staticIP, gateway, subnet, dns1, dns2)) {
+        Serial.println("STA Failed to configure");
+    }
 
+    setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
+}
+
+// Set up Web Server
 AsyncWebServer server(80);
-Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, TOTAL_STEPS);
-
+// HTML page
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html>
 <head>
@@ -75,152 +80,131 @@ const char index_html[] PROGMEM = R"rawliteral(
 </body>
 </html>
 )rawliteral";
-
 // Replaces placeholder with button section in your web page
-String processor(const String &var)
-{
-  // Serial.println(var);
-  if (var == "BUTTONPLACEHOLDER")
-  {
-    String buttons = "";
-    buttons += "<h4>Curtain</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"2\" " + outputState(2) + "><span class=\"slider\"></span></label>";
-    return buttons;
-  }
-  return String();
-}
-
-int isClosed = false;
-String outputState(int output)
-{
-  if (isClosed)
-  {
-    return "checked";
-  }
-  else
-  {
-    return "";
-  }
-}
-
-void recvMsg(uint8_t *data, size_t len)
-{
-  WebSerial.println("Received Data...");
-  String d = "";
-  for (int i = 0; i < len; i++)
-  {
-    d += char(data[i]);
-  }
-  Serial.println(d);
-  if (d == "open")
-  {
-    WebSerial.println("opening");
-    curtain.open(200 * 15);
-    overriden = true;
-    isClosed = false;
-    WebSerial.print("isClosed - ");
-    WebSerial.println(isClosed);
-  }
-  if (d == "close")
-  {
-    WebSerial.println("closing");
-    curtain.close(200 * 15);
-    overriden = true;
-    isClosed = true;
-    WebSerial.print("isClosed - ");
-    WebSerial.println(isClosed);
-  }
-  if (d == "gateway")
-  {
-    WebSerial.println(WiFi.gatewayIP().toString());
-  }
-}
-int get_selected_button(int pin_value)
-{
-  if (pin_value > 3000)
-  {
-    return 2;
-  }
-  else if (pin_value > 1000)
-  {
-    return 1;
-  }
-  else
-  {
-    return 0;
-  }
-}
-void setup()
-{
-  pinMode(PIN_LED, OUTPUT);
-  pinMode(1, OUTPUT);
-
-  pinMode(PIN_LIMIT_SWITCH, INPUT);
-  pinMode(PIN_BUTTONS, INPUT);
-
-  setCpuFrequencyMhz(80);
-
-  digitalWrite(PIN_LED, LOW);
-
-  Serial.begin(115200);
-  if (!WiFi.config(staticIP, gateway, subnet, dns1, dns2)) {
-    Serial.println("STA Failed to configure");
-  }
-  setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
-
-  WebSerial.begin(&server);
-  WebSerial.msgCallback(recvMsg);
-  // Route for root / web page
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send_P(200, "text/html", index_html, processor); });
-
-  server.on("/open", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-    curtain.open(200 * 20);
-    overriden = true;
-    WebSerial.println("open-ing");
-    isClosed = false;
-    request->send(200, "text/plain", "OK"); });
-
-  server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request)
-            {
-    curtain.close(200 * 20);
-    overriden = true;
-    WebSerial.println("close-ing");
-    isClosed = true;
-    request->send(200, "text/plain", "OK");});
-  server.begin();
-}
-void loop()
-{
-  ArduinoOTA.handle();
-
-  int button_value = analogRead(PIN_BUTTONS),
-      pressed_button = get_selected_button(button_value);
-
-  if (digitalRead(PIN_ENABLE))
-  {
-    if (pressed_button == BUTTON_CLOCKWISE)
-    {
-      curtain.close();
+String processor(const String &var) {
+    if (var == "BUTTONPLACEHOLDER") {
+        String checkedString = isCurtainClosed ? "checked" : "";
+        String buttons = "";
+        buttons += "<h4>Curtain</h4><label class='switch'><input type='checkbox' onchange='toggleCheckbox(this)' id='2' " + checkedString + "><span class='slider'></span></label>";
+        return buttons;
     }
-    else if (pressed_button == BUTTON_ANTI_CLOCKWISE)
-    {
-      curtain.open();
+    return String();
+}
+void createServerEndpoints() {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send_P(200, "text/html", index_html, processor);
+    });
+
+    server.on("/open", HTTP_GET, [](AsyncWebServerRequest *request) {
+        webOverride = OPEN_CURTAIN;
+        request->send(200, "text/plain", "OK");
+    });
+
+    server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request) {
+        webOverride = CLOSE_CURTAIN; // TODO: Not working, only opens with api calls
+        request->send(200, "text/plain", "OK");
+    });
+}
+void beginOnlineServer() {
+    server.begin();
+}
+
+void enableWebSerial() {
+    WebSerial.begin(&server);
+    WebSerial.msgCallback(processWebSerialInput);
+}
+void processWebSerialInput(uint8_t *data, size_t len) {
+    WebSerial.println("Received Data...");
+    String d = "";
+    for (int i = 0; i < len; i++) {
+        d += char(data[i]);
     }
-  }
+    Serial.println(d);
+    if (d == "open") {
+        webOverride = OPEN_CURTAIN;
+    }
+    if (d == "close") {
+        webOverride = CLOSE_CURTAIN;
+    }
+    if (d == "gateway") {
+        WebSerial.println(WiFi.gatewayIP().toString());
+    }
+}
 
-  if (digitalRead(PIN_LIMIT_SWITCH) || !(digitalRead(PIN_ENABLE) || pressed_button) && !overriden)
-  {
-    curtain.disable();
-  }
+void readButtonInputs() {
+    int buttonValue = analogRead(PIN_BUTTONS);
+    if (buttonValue > 3000) {
+        pressedButton = BUTTON_CLOCKWISE;
+    } else if (buttonValue > 1000) {
+        pressedButton = BUTTON_ANTI_CLOCKWISE;
+    } else {
+        pressedButton = NONE;
+    }
 
-  // TODO: Move LED status logic into library
-  if (!digitalRead(PIN_ENABLE))
-  {
-    digitalWrite(PIN_LED, HIGH);
-  }
-  else
-  {
-    digitalWrite(PIN_LED, LOW);
-  }
+    isLimitSwitchPressed = digitalRead(PIN_LIMIT_SWITCH);
+}
+void respondToButtonInputs() {
+    // move logic inside Curtains by setting button and limit switch controls
+    if (isLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != NONE) && webOverride != STAY) {
+        curtain.disable();
+    } else if (digitalRead(PIN_ENABLE)) {
+        if (pressedButton == BUTTON_CLOCKWISE) {
+            curtain.close();
+        } else if (pressedButton == BUTTON_ANTI_CLOCKWISE) {
+            curtain.open();
+        }
+    }
+}
+
+void processWebControls() {
+    switch (webOverride) {
+        case OPEN_CURTAIN:
+            WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
+            curtain.open(200 * 15);
+            isCurtainClosed = false;
+            webOverride = STAY;
+            WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
+            WebSerial.println(isCurtainClosed);
+            break;
+        case CLOSE_CURTAIN:
+            WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
+            curtain.close(200 * 15);
+            isCurtainClosed = true;
+            webOverride = STAY;
+            WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
+            WebSerial.println(isCurtainClosed);
+            break;
+    }
+}
+
+void setLEDState() {
+    // TODO: Move LED status logic into library
+    if (!digitalRead(PIN_ENABLE)) {
+        digitalWrite(PIN_LED, HIGH);
+    } else {
+        digitalWrite(PIN_LED, LOW);
+    }
+}
+
+void setup() {
+    setCpuFrequencyMhz(80);
+    Serial.begin(115200);
+
+    setupWiFi();
+    createServerEndpoints();
+    enableWebSerial();
+    beginOnlineServer();
+
+    WebSerial.print("Running ");
+    WebSerial.println(__FILE__);
+}
+
+void loop() {
+    ArduinoOTA.handle();
+    readButtonInputs();
+    respondToButtonInputs();
+
+    processWebControls();
+
+    setLEDState();
 }
