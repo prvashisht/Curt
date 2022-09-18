@@ -20,6 +20,8 @@ const byte PIN_BUTTONS = 34;
 bool isLimitSwitchPressed = false;
 enum inputButtons { NONE, BUTTON_CLOCKWISE, BUTTON_ANTI_CLOCKWISE };
 inputButtons pressedButton = NONE;
+int BUTTON_CLOCKWISE_THRESHOLD = 3000;
+int BUTTON_ANTI_CLOCKWISE_THRESHOLD = 1000;
 
 bool isCurtainClosed = false;
 enum webOverrideStatus { STAY, OPEN_CURTAIN, CLOSE_CURTAIN };
@@ -27,6 +29,13 @@ webOverrideStatus webOverride = STAY;
 
 Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
 
+void setupPins() {
+    pinMode(PIN_LED, OUTPUT);
+    digitalWrite(PIN_LED, HIGH);
+    delay(2000);
+    digitalWrite(PIN_LED, LOW); // check if the LED is working fine.
+    curtain.setButtonAndLimitSwitch(PIN_BUTTONS, BUTTON_CLOCKWISE_THRESHOLD, BUTTON_ANTI_CLOCKWISE_THRESHOLD, PIN_LIMIT_SWITCH);
+}
 void setupWiFi() {
     const char *ssid = WIFI_SSID;
     const char *password = WIFI_PW;
@@ -133,9 +142,9 @@ void processWebSerialInput(uint8_t *data, size_t len) {
 
 void readButtonInputs() {
     int buttonValue = analogRead(PIN_BUTTONS);
-    if (buttonValue > 3000) {
+    if (buttonValue > BUTTON_CLOCKWISE_THRESHOLD) {
         pressedButton = BUTTON_CLOCKWISE;
-    } else if (buttonValue > 1000) {
+    } else if (buttonValue > BUTTON_ANTI_CLOCKWISE_THRESHOLD) {
         pressedButton = BUTTON_ANTI_CLOCKWISE;
     } else {
         pressedButton = NONE;
@@ -190,6 +199,7 @@ void setup() {
     setCpuFrequencyMhz(80);
     Serial.begin(115200);
 
+    setupPins();
     setupWiFi();
     createServerEndpoints();
     enableWebSerial();
