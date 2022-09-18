@@ -32,6 +32,11 @@ bool overriden = false;
 
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PW;
+IPAddress staticIP(192, 168, 178, 85);
+IPAddress gateway(192, 168, 178, 1);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress dns1(192, 168, 178, 13); // optional
+IPAddress dns2(1, 1, 1, 1);        // optional
 
 AsyncWebServer server(80);
 Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, TOTAL_STEPS);
@@ -79,8 +84,6 @@ String processor(const String &var)
   {
     String buttons = "";
     buttons += "<h4>Curtain</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"2\" " + outputState(2) + "><span class=\"slider\"></span></label>";
-    // buttons += "<h4>Output - GPIO 4</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"4\" " + outputState(4) + "><span class=\"slider\"></span></label>";
-    // buttons += "<h4>Output - GPIO 33</h4><label class=\"switch\"><input type=\"checkbox\" onchange=\"toggleCheckbox(this)\" id=\"33\" " + outputState(33) + "><span class=\"slider\"></span></label>";
     return buttons;
   }
   return String();
@@ -126,6 +129,10 @@ void recvMsg(uint8_t *data, size_t len)
     WebSerial.print("isClosed - ");
     WebSerial.println(isClosed);
   }
+  if (d == "gateway")
+  {
+    WebSerial.println(WiFi.gatewayIP().toString());
+  }
 }
 int get_selected_button(int pin_value)
 {
@@ -166,8 +173,10 @@ void setup()
   digitalWrite(PIN_LED, LOW);
 
   Serial.begin(115200);
+  if (!WiFi.config(staticIP, gateway, subnet, dns1, dns2)) {
+    Serial.println("STA Failed to configure");
+  }
   setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
-  Serial.println(WiFi.localIP());
 
   WebSerial.begin(&server);
   WebSerial.msgCallback(recvMsg);
@@ -189,7 +198,7 @@ void setup()
     overriden = true;
     WebSerial.println("close-ing");
     isClosed = true;
-    request->send(200, "text/plain", "OK"); });
+    request->send(200, "text/plain", "OK");});
   server.begin();
 }
 void loop()
