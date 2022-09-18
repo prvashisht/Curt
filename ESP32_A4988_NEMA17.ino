@@ -149,17 +149,6 @@ int get_selected_button(int pin_value)
     return 0;
   }
 }
-void spin(int steps)
-{
-  if (!steps)
-    steps = 1;
-  for (int i = 0; i < steps; i++)
-  {
-    ArduinoOTA.handle();
-    digitalWrite(PIN_STEP, !digitalRead(PIN_STEP));
-    delayMicroseconds(delay_time_us);
-  }
-}
 void setup()
 {
   pinMode(PIN_LED, OUTPUT);
