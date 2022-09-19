@@ -17,15 +17,28 @@ const byte PIN_LED = 25;
 const byte PIN_LIMIT_SWITCH = 26;
 const byte PIN_BUTTONS = 34;
 
+bool isCurtainClosed = false;
 bool isLimitSwitchPressed = false;
-enum inputButtons { NONE, BUTTON_CLOCKWISE, BUTTON_ANTI_CLOCKWISE };
-inputButtons pressedButton = NONE;
 int BUTTON_CLOCKWISE_THRESHOLD = 3000;
 int BUTTON_ANTI_CLOCKWISE_THRESHOLD = 1000;
 
-bool isCurtainClosed = false;
-enum webOverrideStatus { STAY, OPEN_CURTAIN, CLOSE_CURTAIN };
-webOverrideStatus webOverride = STAY;
+// Enum for which input button was pressed
+enum inputButtons { INPUT_NONE, INPUT_BUTTON_CLOCKWISE, INPUT_BUTTON_ANTI_CLOCKWISE };
+inputButtons pressedButton = INPUT_NONE;
+
+// Enum for type of override from the web
+// TODO: Replace this with a proper priority list.
+enum webOverrideStatus { OVERRIDE_NONE, OVERRIDE_OPEN_CURTAIN, OVERRIDE_CLOSE_CURTAIN };
+webOverrideStatus webOverride = OVERRIDE_NONE;
+
+// Enum for current state of the motor
+enum motorStates { MOTOR_DISABLE, MOTOR_CLOCKWISE, MOTOR_ANTI_CLOCKWISE };
+motorStates motorState = MOTOR_DISABLE;
+
+// Enum for current entity controlling the motor
+// TODO: Use CONTROL_WEBSERIAL_MONITOR for a debug mode with interactive inputs.
+enum motorControllers { CONTROL_NONE, CONTROL_BUTTON, CONTROL_WEB_API, CONTROL_WEBSERIAL_MONITOR };
+motorControllers motorController = CONTROL_NONE;
 
 Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
 
@@ -107,12 +120,12 @@ void createServerEndpoints() {
     });
 
     server.on("/open", HTTP_GET, [](AsyncWebServerRequest *request) {
-        webOverride = OPEN_CURTAIN;
+        webOverride = OVERRIDE_OPEN_CURTAIN;
         request->send(200, "text/plain", "OK");
     });
 
     server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request) {
-        webOverride = CLOSE_CURTAIN; // TODO: Not working, only opens with api calls
+        webOverride = OVERRIDE_CLOSE_CURTAIN; // TODO: Not working, only opens with api calls
         request->send(200, "text/plain", "OK");
     });
 }
@@ -131,42 +144,39 @@ void processWebSerialInput(uint8_t *data, size_t len) {
         d += char(data[i]);
     }
     Serial.println(d);
-    if (d == "open") {
-        webOverride = OPEN_CURTAIN;
-    }
-    if (d == "close") {
-        webOverride = CLOSE_CURTAIN;
-    }
-    if (d == "gateway") {
-        WebSerial.println(WiFi.gatewayIP().toString());
-    }
+    if (d == "open") webOverride = OVERRIDE_OPEN_CURTAIN;
+    if (d == "close") webOverride = OVERRIDE_CLOSE_CURTAIN;
+    if (d == "gateway") WebSerial.println(WiFi.gatewayIP().toString());
+    if (d == "filename") WebSerial.println(__FILE__);
 }
 
 void readButtonInputs() {
     int buttonValue = analogRead(PIN_BUTTONS);
     if (buttonValue > BUTTON_CLOCKWISE_THRESHOLD) {
-        pressedButton = BUTTON_CLOCKWISE;
+        pressedButton = INPUT_BUTTON_CLOCKWISE;
     } else if (buttonValue > BUTTON_ANTI_CLOCKWISE_THRESHOLD) {
-        pressedButton = BUTTON_ANTI_CLOCKWISE;
+        pressedButton = INPUT_BUTTON_ANTI_CLOCKWISE;
     } else {
-        pressedButton = NONE;
+        pressedButton = INPUT_NONE;
     }
 
     isLimitSwitchPressed = digitalRead(PIN_LIMIT_SWITCH);
 }
 void respondToButtonInputs() {
     // move logic inside common move_curtain function
-    if (isLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != NONE) && webOverride != STAY) {
+    if (isLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != INPUT_NONE) && webOverride == OVERRIDE_NONE) {
         motor.disable();
     } else if (digitalRead(PIN_ENABLE)) {
-        if (pressedButton == BUTTON_CLOCKWISE) {
+        if (pressedButton == INPUT_BUTTON_CLOCKWISE) {
             motor.clockwise();
-        } else if (pressedButton == BUTTON_ANTI_CLOCKWISE) {
+        } else if (pressedButton == INPUT_BUTTON_ANTI_CLOCKWISE) {
             motor.antiClockwise();
         }
 
-        if (pressedButton != NONE) {
+        if (pressedButton != INPUT_NONE) {
+            motor.enable();
             motor.takeSteps();
+            motor.disable();
         }
     }
 }
@@ -174,19 +184,23 @@ void respondToButtonInputs() {
 void processWebControls() {
     // move logic inside common move_curtain function
     switch (webOverride) {
-        case OPEN_CURTAIN:
+        case OVERRIDE_OPEN_CURTAIN:
             WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
+            motor.enable();
             motor.takeSteps(200 * 15);
+            motor.disable();
             isCurtainClosed = false;
-            webOverride = STAY;
+            webOverride = OVERRIDE_NONE;
             WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
             WebSerial.println(isCurtainClosed);
             break;
-        case CLOSE_CURTAIN:
+        case OVERRIDE_CLOSE_CURTAIN:
             WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
+            motor.enable();
             motor.takeSteps(200 * 15);
+            motor.disable();
             isCurtainClosed = true;
-            webOverride = STAY;
+            webOverride = OVERRIDE_NONE;
             WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
             WebSerial.println(isCurtainClosed);
             break;
