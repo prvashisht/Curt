@@ -3,7 +3,7 @@
 #include <AsyncTCP.h> // Base for Async Web Server
 #include <ESPAsyncWebServer.h> // Creates asynchronous web servers
 #include <WebSerial.h> // enables reading "Serial" output over web (acts as an emulator)
-#include <Curtains.h>
+#include <Stepper_Motor.h>
 
 const byte PIN_SLEEP = 5;
 const byte PIN_DIR = 16;
@@ -27,14 +27,16 @@ bool isCurtainClosed = false;
 enum webOverrideStatus { STAY, OPEN_CURTAIN, CLOSE_CURTAIN };
 webOverrideStatus webOverride = STAY;
 
-Curtains curtain(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
+Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
 
 void setupPins() {
     pinMode(PIN_LED, OUTPUT);
+    pinMode(PIN_BUTTONS, INPUT);
+    pinMode(PIN_LIMIT_SWITCH, INPUT);
+
     digitalWrite(PIN_LED, HIGH);
     delay(2000);
     digitalWrite(PIN_LED, LOW); // check if the LED is working fine.
-    curtain.setButtonAndLimitSwitch(PIN_BUTTONS, BUTTON_CLOCKWISE_THRESHOLD, BUTTON_ANTI_CLOCKWISE_THRESHOLD, PIN_LIMIT_SWITCH);
 }
 void setupWiFi() {
     const char *ssid = WIFI_SSID;
@@ -153,23 +155,28 @@ void readButtonInputs() {
     isLimitSwitchPressed = digitalRead(PIN_LIMIT_SWITCH);
 }
 void respondToButtonInputs() {
-    // move logic inside Curtains by setting button and limit switch controls
+    // move logic inside common move_curtain function
     if (isLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != NONE) && webOverride != STAY) {
-        curtain.disable();
+        motor.disable();
     } else if (digitalRead(PIN_ENABLE)) {
         if (pressedButton == BUTTON_CLOCKWISE) {
-            curtain.close();
+            motor.clockwise();
         } else if (pressedButton == BUTTON_ANTI_CLOCKWISE) {
-            curtain.open();
+            motor.antiClockwise();
+        }
+
+        if (pressedButton != NONE) {
+            motor.takeSteps();
         }
     }
 }
 
 void processWebControls() {
+    // move logic inside common move_curtain function
     switch (webOverride) {
         case OPEN_CURTAIN:
             WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
-            curtain.open(200 * 15);
+            motor.takeSteps(200 * 15);
             isCurtainClosed = false;
             webOverride = STAY;
             WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
@@ -177,7 +184,7 @@ void processWebControls() {
             break;
         case CLOSE_CURTAIN:
             WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
-            curtain.close(200 * 15);
+            motor.takeSteps(200 * 15);
             isCurtainClosed = true;
             webOverride = STAY;
             WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
@@ -187,7 +194,6 @@ void processWebControls() {
 }
 
 void setLEDState() {
-    // TODO: Move LED status logic into library
     if (!digitalRead(PIN_ENABLE)) {
         digitalWrite(PIN_LED, HIGH);
     } else {
