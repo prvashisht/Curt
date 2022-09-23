@@ -5,6 +5,9 @@
 #include <WebSerial.h> // enables reading "Serial" output over web (acts as an emulator)
 #include <Stepper_Motor.h>
 
+#define DEVICE_HOSTNAME "LastRoomCurtain" // change this for every new device
+#define STATIC_IP_HOST_ADDRESS 85 // change this for every new device
+
 const byte PIN_SLEEP = 5;
 const byte PIN_DIR = 16;
 const byte PIN_STEP = 17;
@@ -19,8 +22,8 @@ const byte PIN_BUTTONS = 34;
 
 bool isCurtainClosed = false;
 bool isLimitSwitchPressed = false;
-int BUTTON_CLOCKWISE_THRESHOLD = 3000;
-int BUTTON_ANTI_CLOCKWISE_THRESHOLD = 1000;
+int BUTTON_RIGHT_THRESHOLD = 1000;
+int BUTTON_LEFT_THRESHOLD = 3000;
 
 // Enum for which input button was pressed
 enum inputButtons { INPUT_NONE, INPUT_BUTTON_CLOCKWISE, INPUT_BUTTON_ANTI_CLOCKWISE };
@@ -40,7 +43,7 @@ motorStates motorState = MOTOR_DISABLE;
 enum motorControllers { CONTROL_NONE, CONTROL_BUTTON, CONTROL_WEB_API, CONTROL_WEBSERIAL_MONITOR };
 motorControllers motorController = CONTROL_NONE;
 
-Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3);
+Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, WebSerial);
 
 void setupPins() {
     pinMode(PIN_LED, OUTPUT);
@@ -54,7 +57,8 @@ void setupPins() {
 void setupWiFi() {
     const char *ssid = WIFI_SSID;
     const char *password = WIFI_PW;
-    IPAddress staticIP(192, 168, 178, 85);
+
+    IPAddress staticIP(192, 168, 178, STATIC_IP_HOST_ADDRESS);
     IPAddress gateway(192, 168, 178, 1);
     IPAddress subnet(255, 255, 255, 0);
     IPAddress dns1(192, 168, 178, 13); // optional
@@ -64,7 +68,7 @@ void setupWiFi() {
         Serial.println("STA Failed to configure");
     }
 
-    setupOTA("LastRoomCurtain", WIFI_SSID, WIFI_PW);
+    setupOTA(DEVICE_HOSTNAME, WIFI_SSID, WIFI_PW);
 }
 
 // Set up Web Server
@@ -152,10 +156,10 @@ void processWebSerialInput(uint8_t *data, size_t len) {
 
 void readButtonInputs() {
     int buttonValue = analogRead(PIN_BUTTONS);
-    if (buttonValue > BUTTON_CLOCKWISE_THRESHOLD) {
-        pressedButton = INPUT_BUTTON_CLOCKWISE;
-    } else if (buttonValue > BUTTON_ANTI_CLOCKWISE_THRESHOLD) {
+    if (buttonValue > BUTTON_LEFT_THRESHOLD) {
         pressedButton = INPUT_BUTTON_ANTI_CLOCKWISE;
+    } else if (buttonValue > BUTTON_RIGHT_THRESHOLD) {
+        pressedButton = INPUT_BUTTON_CLOCKWISE;
     } else {
         pressedButton = INPUT_NONE;
     }
