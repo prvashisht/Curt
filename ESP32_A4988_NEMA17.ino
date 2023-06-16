@@ -25,7 +25,6 @@ const byte PIN_LED = 25;
 const byte PIN_LIMIT_SWITCH = 26;
 const byte PIN_BUTTONS = 34;
 
-bool isCurtainClosed = false;
 bool isLimitSwitchPressed = false;
 int BUTTON_RIGHT_THRESHOLD = 1000;
 int BUTTON_LEFT_THRESHOLD = 3000;
@@ -54,6 +53,12 @@ motorControllers motorController = CONTROL_NONE;
 
 Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, WebSerial);
 
+void setCurtainToOpen() {
+  motor.clockwise();
+}
+void setCurtainToClose() {
+  motor.antiClockwise();
+}
 void setupPins() {
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUTTONS, INPUT);
@@ -94,23 +99,15 @@ const char index_html[] PROGMEM = R"rawliteral(
     h2 {font-size: 3.0rem;}
     p {font-size: 3.0rem;}
     body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
-    .switch {position: relative; display: inline-block; width: 120px; height: 68px} 
-    .switch input {display: none}
-    .slider {position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 6px}
-    .slider:before {position: absolute; content: ""; height: 52px; width: 52px; left: 8px; bottom: 8px; background-color: #fff; -webkit-transition: .4s; transition: .4s; border-radius: 3px}
-    input:checked+.slider {background-color: #b30000}
-    input:checked+.slider:before {-webkit-transform: translateX(52px); -ms-transform: translateX(52px); transform: translateX(52px)}
   </style>
 </head>
 <body>
   <h2>ESP Web Server</h2>
   %BUTTONPLACEHOLDER%
-<script>function toggleCheckbox(element) {
+<script>
+function toggleCurtain(operation) {
   var xhr = new XMLHttpRequest();
-//  if(element.checked){ xhr.open("GET", "/update?output="+element.id+"&state=1", true); }
-//  else { xhr.open("GET", "/update?output="+element.id+"&state=0", true); }
-  if(element.checked){ xhr.open("GET", "/open", true); }
-  else { xhr.open("GET", "/close", true); }
+  xhr.open("GET", "/" + operation, true);
   xhr.send();
 }
 </script>
@@ -120,9 +117,8 @@ const char index_html[] PROGMEM = R"rawliteral(
 // Replaces placeholder with button section in your web page
 String processor(const String &var) {
     if (var == "BUTTONPLACEHOLDER") {
-        String checkedString = isCurtainClosed ? "checked" : "";
         String buttons = "";
-        buttons += "<h4>Curtain</h4><label class='switch'><input type='checkbox' onchange='toggleCheckbox(this)' id='2' " + checkedString + "><span class='slider'></span></label>";
+        buttons += "<h4>Curtain</h4><button onclick=\"toggleCurtain('open')\">Open</button><button onclick=\"toggleCurtain('close')\">Close</button>";
         return buttons;
     }
     return String();
@@ -138,7 +134,7 @@ void createServerEndpoints() {
     });
 
     server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request) {
-        webOverride = OVERRIDE_CLOSE_CURTAIN; // TODO: Not working, only opens with api calls
+        webOverride = OVERRIDE_CLOSE_CURTAIN;
         request->send(200, "text/plain", "OK");
     });
 }
@@ -196,28 +192,34 @@ void respondToButtonInputs() {
 
 void processWebControls() {
     // move logic inside common move_curtain function
-    int num_rotations = 5;
+    int num_rotations = 3;
     switch (webOverride) {
         case OVERRIDE_OPEN_CURTAIN:
+            if (curtainPosition == CURTAIN_OPENED) {
+              webOverride = OVERRIDE_NONE;
+              break;
+            }
             WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
-            motor.enable();
-            motor.takeSteps(200 * num_rotations);
-            motor.disable();
-            isCurtainClosed = false;
-            webOverride = OVERRIDE_NONE;
-            WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
-            WebSerial.println(isCurtainClosed);
+            setCurtainToOpen();
+            curtainPosition = CURTAIN_OPENED;
             break;
         case OVERRIDE_CLOSE_CURTAIN:
+            if (curtainPosition == CURTAIN_CLOSED) {
+              webOverride = OVERRIDE_NONE;
+              break;
+            }
             WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
-            motor.enable();
-            motor.takeSteps(200 * num_rotations);
-            motor.disable();
-            isCurtainClosed = true;
-            webOverride = OVERRIDE_NONE;
-            WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
-            WebSerial.println(isCurtainClosed);
+            setCurtainToClose();
+            curtainPosition = CURTAIN_CLOSED;
             break;
+    }
+    if (webOverride != OVERRIDE_NONE) {
+      motor.enable();
+      motor.takeSteps(200 * num_rotations);
+      motor.disable();
+      webOverride = OVERRIDE_NONE;
+      WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
+      WebSerial.println(curtainPosition == CURTAIN_CLOSED);
     }
 }
 
