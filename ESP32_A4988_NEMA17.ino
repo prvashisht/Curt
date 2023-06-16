@@ -192,7 +192,8 @@ void respondToButtonInputs() {
 
 void processWebControls() {
     // move logic inside common move_curtain function
-    int num_rotations = 3;
+    byte num_rotations = 22,
+    num_offset_rotations = 3;
     switch (webOverride) {
         case OVERRIDE_OPEN_CURTAIN:
             if (curtainPosition == CURTAIN_OPENED) {
@@ -216,6 +217,13 @@ void processWebControls() {
     if (webOverride != OVERRIDE_NONE) {
       motor.enable();
       motor.takeSteps(200 * num_rotations);
+      // next three lines (for offset rotation) are here because once the curtain opens, the belt and the joint
+      // with the curtain has passed the normal (perpendicular) position. To bring it back in place with the curtain
+      // we have to rotate it back.
+      // This might not be an issue if I find a way to move curtains with the motor without a joint (like SwitchBot)
+      if (curtainPosition == CURTAIN_CLOSED) setCurtainToOpen();
+      else setCurtainToClose();
+      motor.takeSteps(200 * num_offset_rotations);
       motor.disable();
       webOverride = OVERRIDE_NONE;
       WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
