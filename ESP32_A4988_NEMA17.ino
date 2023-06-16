@@ -5,8 +5,13 @@
 #include <WebSerial.h> // enables reading "Serial" output over web (acts as an emulator)
 #include <Stepper_Motor.h>
 
-#define DEVICE_HOSTNAME "LastRoomCurtain" // change this for every new device
-#define STATIC_IP_HOST_ADDRESS 85 // change this for every new device
+//CHANGE THESE FOR EVERY DEVICE
+//
+#define DEVICE_HOSTNAME "TestCurtain"
+#define STATIC_IP_HOST_ADDRESS 86
+//
+//CHANGE THESE FOR EVERY DEVICE
+
 
 const byte PIN_SLEEP = 5;
 const byte PIN_DIR = 16;
@@ -28,6 +33,10 @@ int BUTTON_LEFT_THRESHOLD = 3000;
 // Enum for which input button was pressed
 enum inputButtons { INPUT_NONE, INPUT_BUTTON_CLOCKWISE, INPUT_BUTTON_ANTI_CLOCKWISE };
 inputButtons pressedButton = INPUT_NONE;
+
+// Enum for curtain position
+enum curtainPositions { CURTAIN_OPENED, CURTAIN_CLOSED, CURTAIN_MIDWAY };
+curtainPositions curtainPosition = CURTAIN_OPENED;
 
 // Enum for type of override from the web
 // TODO: Replace this with a proper priority list.
@@ -187,11 +196,12 @@ void respondToButtonInputs() {
 
 void processWebControls() {
     // move logic inside common move_curtain function
+    int num_rotations = 5;
     switch (webOverride) {
         case OVERRIDE_OPEN_CURTAIN:
             WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
             motor.enable();
-            motor.takeSteps(200 * 15);
+            motor.takeSteps(200 * num_rotations);
             motor.disable();
             isCurtainClosed = false;
             webOverride = OVERRIDE_NONE;
@@ -201,7 +211,7 @@ void processWebControls() {
         case OVERRIDE_CLOSE_CURTAIN:
             WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
             motor.enable();
-            motor.takeSteps(200 * 15);
+            motor.takeSteps(200 * num_rotations);
             motor.disable();
             isCurtainClosed = true;
             webOverride = OVERRIDE_NONE;
@@ -222,6 +232,7 @@ void setLEDState() {
 void setup() {
     setCpuFrequencyMhz(80);
     Serial.begin(115200);
+    analogReadResolution(12); // test lower resolution for smaller button value range
 
     setupPins();
     setupWiFi();
