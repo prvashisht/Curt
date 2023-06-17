@@ -90,6 +90,11 @@ void setupWiFi() {
 
     setupOTA(DEVICE_HOSTNAME, WIFI_SSID, WIFI_PW);
 }
+void setupWebServer() {
+  createServerEndpoints();
+  enableWebSerial();
+  beginOnlineServer();
+}
 
 // Set up Web Server
 AsyncWebServer server(80);
@@ -256,9 +261,7 @@ void setup() {
 
     setupPins();
     setupWiFi();
-    createServerEndpoints();
-    enableWebSerial();
-    beginOnlineServer();
+    setupWebServer();
 
     WebSerial.print("Running ");
     WebSerial.println(__FILE__);
