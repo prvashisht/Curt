@@ -9,6 +9,7 @@
 //
 #define DEVICE_HOSTNAME "TestCurtain"
 #define STATIC_IP_HOST_ADDRESS 86
+String curtain_api_secret = MIDDLE_ROOM_CURTAIN_API_SECRET;
 //
 //CHANGE THESE FOR EVERY DEVICE
 
@@ -117,8 +118,11 @@ function toggleCurtain(operation) {
 // Replaces placeholder with button section in your web page
 String processor(const String &var) {
     if (var == "BUTTONPLACEHOLDER") {
+        String api_secret_param = "&api_secret=" + curtain_api_secret;
         String buttons = "";
-        buttons += "<h4>Curtain</h4><button onclick=\"toggleCurtain('open')\">Open</button><button onclick=\"toggleCurtain('close')\">Close</button>";
+        buttons += "<h4>Curtain</h4>";
+        buttons += "<button onclick=\"toggleCurtain('move_curtain?position=open" + api_secret_param + "')\">Open</button>";
+        buttons += "<button onclick=\"toggleCurtain('move_curtain?position=close" + api_secret_param + "')\">Close</button>";
         return buttons;
     }
     return String();
@@ -128,14 +132,34 @@ void createServerEndpoints() {
         request->send_P(200, "text/html", index_html, processor);
     });
 
-    server.on("/open", HTTP_GET, [](AsyncWebServerRequest *request) {
-        webOverride = OVERRIDE_OPEN_CURTAIN;
-        request->send(200, "text/plain", "OK");
-    });
+    server.on("/move_curtain", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!(request->hasParam("position") && request->hasParam("api_secret"))) {
+          request->send(400, "text/plain", "You need 'position' and 'api_secret' params!");
+          return;
+        }
 
-    server.on("/close", HTTP_GET, [](AsyncWebServerRequest *request) {
-        webOverride = OVERRIDE_CLOSE_CURTAIN;
-        request->send(200, "text/plain", "OK");
+        String requested_position = request->getParam("position")->value();
+        String api_secret = request->getParam("api_secret")->value();
+
+        if (api_secret != curtain_api_secret) {
+          request->send(401, "text/plain", "Not authorised to operate this heavy machinery!");
+          return;
+        }
+        
+        bool shouldOperate = false;
+        if (requested_position == "open") {
+            webOverride = OVERRIDE_OPEN_CURTAIN;
+            shouldOperate = curtainPosition != CURTAIN_OPENED;
+        } else if (requested_position == "close") {
+            webOverride = OVERRIDE_CLOSE_CURTAIN;
+            shouldOperate = curtainPosition != CURTAIN_CLOSED;
+        }
+
+        if (shouldOperate) request->send(200, "text/plain", "OK");
+        else {
+          request->send(400, "text/plain", "Curtain already at the requested position");
+          webOverride = OVERRIDE_NONE;
+        }
     });
 }
 void beginOnlineServer() {
@@ -217,10 +241,6 @@ void processWebControls() {
     if (webOverride != OVERRIDE_NONE) {
       motor.enable();
       motor.takeSteps(200 * num_rotations);
-      // next three lines (for offset rotation) are here because once the curtain opens, the belt and the joint
-      // with the curtain has passed the normal (perpendicular) position. To bring it back in place with the curtain
-      // we have to rotate it back.
-      // This might not be an issue if I find a way to move curtains with the motor without a joint (like SwitchBot)
       if (curtainPosition == CURTAIN_CLOSED) setCurtainToOpen();
       else setCurtainToClose();
       motor.takeSteps(200 * num_offset_rotations);
