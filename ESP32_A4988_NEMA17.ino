@@ -13,22 +13,27 @@ String curtain_api_secret = MIDDLE_ROOM_CURTAIN_API_SECRET;
 //
 //CHANGE THESE FOR EVERY DEVICE
 
+#define PIN_SLEEP 5
+#define PIN_DIR 16
+#define PIN_STEP 17
+#define PIN_RESET 18
+#define PIN_MS3 19
+#define PIN_MS2 21
+#define PIN_MS1 22
+#define PIN_ENABLE 23
+#define PIN_LED 25
+#define PIN_LIMIT_SWITCH 26
+#define PIN_BUTTONS 34
 
-const byte PIN_SLEEP = 5;
-const byte PIN_DIR = 16;
-const byte PIN_STEP = 17;
-const byte PIN_RESET = 18;
-const byte PIN_MS3 = 19;
-const byte PIN_MS2 = 21;
-const byte PIN_MS1 = 22;
-const byte PIN_ENABLE = 23;
-const byte PIN_LED = 25;
-const byte PIN_LIMIT_SWITCH = 26;
-const byte PIN_BUTTONS = 34;
+#define CPU_FREQUENCY 80
+#define SERIAL_BAUD_RATE 115200
+#define ANALOG_RESOLUTION 12
 
-bool isLimitSwitchPressed = false;
-int BUTTON_RIGHT_THRESHOLD = 1000;
-int BUTTON_LEFT_THRESHOLD = 3000;
+#define STEPS_PER_ROTATION 200
+#define RIGHT_BUTTON_ANALOG_THRESHOLD 1000
+#define LEFT_BUTTON_ANALOG_THRESHOLD 3000
+
+bool isCurtainLimitSwitchPressed = false;
 
 // Enum for which input button was pressed
 enum inputButtons { INPUT_NONE, INPUT_BUTTON_CLOCKWISE, INPUT_BUTTON_ANTI_CLOCKWISE };
@@ -41,16 +46,16 @@ curtainPositions curtainPosition = CURTAIN_OPENED;
 // Enum for type of override from the web
 // TODO: Replace this with a proper priority list.
 enum webOverrideStatus { OVERRIDE_NONE, OVERRIDE_OPEN_CURTAIN, OVERRIDE_CLOSE_CURTAIN };
-webOverrideStatus webOverride = OVERRIDE_NONE;
+webOverrideStatus webControlOverride = OVERRIDE_NONE;
 
 // Enum for current state of the motor
-enum motorStates { MOTOR_DISABLE, MOTOR_CLOCKWISE, MOTOR_ANTI_CLOCKWISE };
-motorStates motorState = MOTOR_DISABLE;
+enum MotorActions { MOTOR_DISABLE, MOTOR_CLOCKWISE, MOTOR_ANTI_CLOCKWISE };
+MotorActions motorAction = MOTOR_DISABLE;
 
 // Enum for current entity controlling the motor
 // TODO: Use CONTROL_WEBSERIAL_MONITOR for a debug mode with interactive inputs.
-enum motorControllers { CONTROL_NONE, CONTROL_BUTTON, CONTROL_WEB_API, CONTROL_WEBSERIAL_MONITOR };
-motorControllers motorController = CONTROL_NONE;
+enum MotorControllerType { CONTROL_NONE, CONTROL_BUTTON, CONTROL_WEB_API, CONTROL_WEBSERIAL_MONITOR };
+MotorControllerType MotorControllerType = CONTROL_NONE;
 
 Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, WebSerial);
 
@@ -148,17 +153,17 @@ void createServerEndpoints() {
         
         bool shouldOperate = false;
         if (requested_position == "open") {
-            webOverride = OVERRIDE_OPEN_CURTAIN;
+            webControlOverride = OVERRIDE_OPEN_CURTAIN;
             shouldOperate = curtainPosition != CURTAIN_OPENED;
         } else if (requested_position == "close") {
-            webOverride = OVERRIDE_CLOSE_CURTAIN;
+            webControlOverride = OVERRIDE_CLOSE_CURTAIN;
             shouldOperate = curtainPosition != CURTAIN_CLOSED;
         }
 
         if (shouldOperate) request->send(200, "text/plain", "OK");
         else {
           request->send(400, "text/plain", "Curtain already at the requested position");
-          webOverride = OVERRIDE_NONE;
+          webControlOverride = OVERRIDE_NONE;
         }
     });
 }
@@ -172,30 +177,30 @@ void enableWebSerial() {
 }
 void processWebSerialInput(uint8_t *data, size_t len) {
     WebSerial.println("Received Data...");
-    String d = "";
+    String incomingMessage = "";
     for (int i = 0; i < len; i++) {
-        d += char(data[i]);
+        incomingMessage += char(data[i]);
     }
-    Serial.println(d);
-    if (d == "gateway") WebSerial.println(WiFi.gatewayIP().toString());
-    if (d == "filename") WebSerial.println(__FILE__);
+    Serial.println(incomingMessage);
+    if (incomingMessage == "gateway") WebSerial.println(WiFi.gatewayIP().toString());
+    if (incomingMessage == "filename") WebSerial.println(__FILE__);
 }
 
 void readButtonInputs() {
     int buttonValue = analogRead(PIN_BUTTONS);
-    if (buttonValue > BUTTON_LEFT_THRESHOLD) {
+    if (buttonValue > LEFT_BUTTON_ANALOG_THRESHOLD) {
         pressedButton = INPUT_BUTTON_ANTI_CLOCKWISE;
-    } else if (buttonValue > BUTTON_RIGHT_THRESHOLD) {
+    } else if (buttonValue > RIGHT_BUTTON_ANALOG_THRESHOLD) {
         pressedButton = INPUT_BUTTON_CLOCKWISE;
     } else {
         pressedButton = INPUT_NONE;
     }
 
-    isLimitSwitchPressed = digitalRead(PIN_LIMIT_SWITCH);
+    isCurtainLimitSwitchPressed = digitalRead(PIN_LIMIT_SWITCH);
 }
 void respondToButtonInputs() {
     // move logic inside common move_curtain function
-    if (isLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != INPUT_NONE) && webOverride == OVERRIDE_NONE) {
+    if (isCurtainLimitSwitchPressed || !(digitalRead(PIN_ENABLE) || pressedButton != INPUT_NONE) && webControlOverride == OVERRIDE_NONE) {
         motor.disable();
     } else if (digitalRead(PIN_ENABLE)) {
         if (pressedButton == INPUT_BUTTON_CLOCKWISE) {
@@ -215,9 +220,9 @@ void moveCurtain(curtainPositions target_position, motorStates target_direction,
     if (curtainPosition != target_position) {
         target_direction == MOTOR_CLOCKWISE ? motor.clockwise() : motor.antiClockwise();
         motor.enable();
-        motor.takeSteps(200 * num_rotations);
+        motor.takeSteps(STEPS_PER_ROTATION * num_rotations);
         target_direction == MOTOR_CLOCKWISE ? motor.antiClockwise() : motor.clockwise();
-        motor.takeSteps(200 * num_offset_rotations);
+        motor.takeSteps(STEPS_PER_ROTATION * num_offset_rotations);
         motor.disable();
         curtainPosition = target_position;
     }
@@ -225,7 +230,7 @@ void moveCurtain(curtainPositions target_position, motorStates target_direction,
 void processWebControls() {
     // move logic inside common move_curtain function
     byte num_rotations = 22, num_offset_rotations = 3;
-    switch (webOverride) {
+    switch (webControlOverride) {
         case OVERRIDE_OPEN_CURTAIN:
             moveCurtain(CURTAIN_OPENED, MOTOR_CLOCKWISE, num_rotations, num_offset_rotations);
             break;
@@ -233,7 +238,7 @@ void processWebControls() {
             moveCurtain(CURTAIN_CLOSED, MOTOR_ANTI_CLOCKWISE, num_rotations, num_offset_rotations);
             break;
     }
-    webOverride = OVERRIDE_NONE;
+    webControlOverride = OVERRIDE_NONE;
 }
 
 void setLEDState() {
@@ -245,9 +250,9 @@ void setLEDState() {
 }
 
 void setup() {
-    setCpuFrequencyMhz(80);
-    Serial.begin(115200);
-    analogReadResolution(12); // test lower resolution for smaller button value range
+    setCpuFrequencyMhz(CPU_FREQUENCY);
+    Serial.begin(SERIAL_BAUD_RATE);
+    analogReadResolution(ANALOG_RESOLUTION); // test lower resolution for smaller button value range
 
     setupPins();
     setupWiFi();
