@@ -15,7 +15,7 @@ The project includes functionality for Over-The-Air (OTA) updates, allowing you 
 
 ## Libraries Used
 
-- Credentials.h: This library contains the WiFi SSID and password.
+- Credentials.h: This file contains the WiFi SSID and password, and other API/Secre credentials.
 - [CustomOTA.h](https://github.com/SensorsIot/ESP32-OTA): This library allows OTA firmware updates.
 - AsyncTCP.h: This library is used to create asynchronous TCP connections.
 - ESPAsyncWebServer.h: This library is used to create asynchronous web servers.
