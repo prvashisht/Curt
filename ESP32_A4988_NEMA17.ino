@@ -7,8 +7,8 @@
 
 //CHANGE THESE FOR EVERY DEVICE
 //
-#define DEVICE_HOSTNAME "TestCurtain"
-#define STATIC_IP_HOST_ADDRESS 86
+#define DEVICE_HOSTNAME "MiddleRoomCurtain"
+#define STATIC_IP_HOST_ADDRESS 85
 String curtain_api_secret = MIDDLE_ROOM_CURTAIN_API_SECRET;
 //
 //CHANGE THESE FOR EVERY DEVICE
@@ -177,8 +177,6 @@ void processWebSerialInput(uint8_t *data, size_t len) {
         d += char(data[i]);
     }
     Serial.println(d);
-    if (d == "open") webOverride = OVERRIDE_OPEN_CURTAIN;
-    if (d == "close") webOverride = OVERRIDE_CLOSE_CURTAIN;
     if (d == "gateway") WebSerial.println(WiFi.gatewayIP().toString());
     if (d == "filename") WebSerial.println(__FILE__);
 }
@@ -213,42 +211,29 @@ void respondToButtonInputs() {
         }
     }
 }
-
+void moveCurtain(curtainPositions target_position, motorStates target_direction, int num_rotations, int num_offset_rotations) {
+    if (curtainPosition != target_position) {
+        target_direction == MOTOR_CLOCKWISE ? motor.clockwise() : motor.antiClockwise();
+        motor.enable();
+        motor.takeSteps(200 * num_rotations);
+        target_direction == MOTOR_CLOCKWISE ? motor.antiClockwise() : motor.clockwise();
+        motor.takeSteps(200 * num_offset_rotations);
+        motor.disable();
+        curtainPosition = target_position;
+    }
+}
 void processWebControls() {
     // move logic inside common move_curtain function
-    byte num_rotations = 22,
-    num_offset_rotations = 3;
+    byte num_rotations = 22, num_offset_rotations = 3;
     switch (webOverride) {
         case OVERRIDE_OPEN_CURTAIN:
-            if (curtainPosition == CURTAIN_OPENED) {
-              webOverride = OVERRIDE_NONE;
-              break;
-            }
-            WebSerial.println("opening -- DO NOT UPDATE THE CODE RIGHT NOW");
-            setCurtainToOpen();
-            curtainPosition = CURTAIN_OPENED;
+            moveCurtain(CURTAIN_OPENED, MOTOR_CLOCKWISE, num_rotations, num_offset_rotations);
             break;
         case OVERRIDE_CLOSE_CURTAIN:
-            if (curtainPosition == CURTAIN_CLOSED) {
-              webOverride = OVERRIDE_NONE;
-              break;
-            }
-            WebSerial.println("closing -- DO NOT UPDATE THE CODE RIGHT NOW");
-            setCurtainToClose();
-            curtainPosition = CURTAIN_CLOSED;
+            moveCurtain(CURTAIN_CLOSED, MOTOR_ANTI_CLOCKWISE, num_rotations, num_offset_rotations);
             break;
     }
-    if (webOverride != OVERRIDE_NONE) {
-      motor.enable();
-      motor.takeSteps(200 * num_rotations);
-      if (curtainPosition == CURTAIN_CLOSED) setCurtainToOpen();
-      else setCurtainToClose();
-      motor.takeSteps(200 * num_offset_rotations);
-      motor.disable();
-      webOverride = OVERRIDE_NONE;
-      WebSerial.print("SAFE TO UPDATE -- isCurtainClosed: ");
-      WebSerial.println(curtainPosition == CURTAIN_CLOSED);
-    }
+    webOverride = OVERRIDE_NONE;
 }
 
 void setLEDState() {
