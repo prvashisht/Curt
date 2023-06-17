@@ -216,7 +216,7 @@ void respondToButtonInputs() {
         }
     }
 }
-void moveCurtain(curtainPositions target_position, motorStates target_direction, int num_rotations, int num_offset_rotations) {
+void moveCurtain(curtainPositions target_position, MotorActions target_direction, int num_rotations, int num_offset_rotations) {
     if (curtainPosition != target_position) {
         target_direction == MOTOR_CLOCKWISE ? motor.clockwise() : motor.antiClockwise();
         motor.enable();
