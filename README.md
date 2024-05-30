@@ -15,7 +15,7 @@ The project includes functionality for Over-The-Air (OTA) updates, allowing you 
 
 ## Libraries Used
 
-- Credentials.h: This file contains the WiFi SSID and password, and other API/Secre credentials.
+- Credentials.h: This file contains the WiFi SSID and password and other API/Secret credentials.
 - [CustomOTA.h](https://github.com/SensorsIot/ESP32-OTA): This library allows OTA firmware updates.
 - AsyncTCP.h: This library is used to create asynchronous TCP connections.
 - ESPAsyncWebServer.h: This library is used to create asynchronous web servers.
@@ -42,6 +42,8 @@ The project includes functionality for Over-The-Air (OTA) updates, allowing you 
 Once the ESP32 is up and running, you can control the curtain using the physical buttons. Press the button once to open or close the curtain.
 
 To control the curtain remotely, connect your device to the same network as the ESP32 and navigate to its IP address in a web browser. Click the 'Open' or 'Close' buttons to control the curtain.
+
+See the curtain in action [here](https://www.instagram.com/stories/highlights/17961398177593328/).
 
 ## Future Improvements
 
