@@ -95,47 +95,50 @@ void setupWiFi() {
 AsyncWebServer server(80);
 // HTML page
 const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html>
+<!DOCTYPE HTML>
+<html>
 <head>
   <title>ESP Web Server</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="data:,">
   <style>
-    html {font-family: Arial; display: inline-block; text-align: center;}
-    h2 {font-size: 3.0rem;}
-    p {font-size: 3.0rem;}
-    body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
-    button {padding: 16px 40px; font-size: 2.0rem; margin: 5px;}
+    html {font-family: Arial, sans-serif; display: inline-block; text-align: center; background-color: #f0f0f0; color: #333;}
+    h2 {font-size: 3.0rem; color: #007BFF;}
+    h4 {font-size: 2.0rem; color: #007BFF; margin-top: 30px;}
+    p {font-size: 1.5rem;}
+    body {max-width: 600px; margin: 0 auto; padding: 25px; box-shadow: 0px 0px 20px rgba(0, 0, 0, 0.1); background: #fff; border-radius: 10px;}
+    button {padding: 16px 40px; font-size: 1.5rem; margin: 10px 5px; border: none; border-radius: 5px; background-color: #007BFF; color: white; cursor: pointer; transition: background-color 0.3s ease;}
+    button:hover {background-color: #0056b3;}
+    #buttonContainer {margin-top: 20px;}
   </style>
 </head>
 <body>
   <h2>ESP Web Server</h2>
-  <div id="buttonContainer">%BUTTONPLACEHOLDER%</div>
-<script>
-var apiSecret = '%API_SECRET%';
-function toggleCurtain(operation) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", "/" + operation, true);
-  xhr.send();
-}
-
-function setCurtainPosition(position) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", "/set_curtain_position?position=" + position + "&api_secret=" + apiSecret, true);
-  xhr.send();
-}
-
-document.addEventListener('DOMContentLoaded', (event) => {
-  document.getElementById("buttonContainer").innerHTML = `
+  <div id="buttonContainer">
     <h4>Curtain</h4>
-    <button onclick="toggleCurtain('move_curtain?position=open&api_secret=' + apiSecret)">Open Curtain</button>
-    <button onclick="toggleCurtain('move_curtain?position=close&api_secret=' + apiSecret)">Close Curtain</button>
+    <button onclick="toggleCurtain('open')">Open Curtain</button>
+    <button onclick="toggleCurtain('close')">Close Curtain</button>
     <h4>Set Curtain Position</h4>
     <button onclick="setCurtainPosition('open')">Set as Open</button>
     <button onclick="setCurtainPosition('close')">Set as Closed</button>
-  `;
-});
-</script>
+  </div>
+  <script>
+    var apiSecret = '%API_SECRET%';
+
+    function sendRequest(url) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("GET", url, true);
+      xhr.send();
+    }
+
+    function toggleCurtain(position) {
+      sendRequest(`/move_curtain?position=${position}&api_secret=${apiSecret}`);
+    }
+
+    function setCurtainPosition(position) {
+      sendRequest(`/set_curtain_position?position=${position}&api_secret=${apiSecret}`);
+    }
+  </script>
 </body>
 </html>
 )rawliteral";
