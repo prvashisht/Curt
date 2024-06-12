@@ -55,7 +55,7 @@ MotorActions motorAction = MOTOR_DISABLE;
 // Enum for current entity controlling the motor
 // TODO: Use CONTROL_WEBSERIAL_MONITOR for a debug mode with interactive inputs.
 enum MotorControllerType { CONTROL_NONE, CONTROL_BUTTON, CONTROL_WEB_API, CONTROL_WEBSERIAL_MONITOR };
-MotorControllerType MotorControllerType = CONTROL_NONE;
+MotorControllerType motorControllerType = CONTROL_NONE;
 
 Stepper_Motor motor(PIN_ENABLE, PIN_DIR, PIN_STEP, PIN_SLEEP, PIN_RESET, PIN_MS1, PIN_MS2, PIN_MS3, WebSerial);
 
@@ -90,11 +90,6 @@ void setupWiFi() {
 
     setupOTA(DEVICE_HOSTNAME, WIFI_SSID, WIFI_PW);
 }
-void setupWebServer() {
-  createServerEndpoints();
-  enableWebSerial();
-  beginOnlineServer();
-}
 
 // Set up Web Server
 AsyncWebServer server(80);
@@ -110,30 +105,44 @@ const char index_html[] PROGMEM = R"rawliteral(
     h2 {font-size: 3.0rem;}
     p {font-size: 3.0rem;}
     body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
+    button {padding: 16px 40px; font-size: 2.0rem; margin: 5px;}
   </style>
 </head>
 <body>
   <h2>ESP Web Server</h2>
-  %BUTTONPLACEHOLDER%
+  <div id="buttonContainer">%BUTTONPLACEHOLDER%</div>
 <script>
+var apiSecret = '%API_SECRET%';
 function toggleCurtain(operation) {
   var xhr = new XMLHttpRequest();
   xhr.open("GET", "/" + operation, true);
   xhr.send();
 }
+
+function setCurtainPosition(position) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", "/set_curtain_position?position=" + position + "&api_secret=" + apiSecret, true);
+  xhr.send();
+}
+
+document.addEventListener('DOMContentLoaded', (event) => {
+  document.getElementById("buttonContainer").innerHTML = `
+    <h4>Curtain</h4>
+    <button onclick="toggleCurtain('move_curtain?position=open&api_secret=' + apiSecret)">Open Curtain</button>
+    <button onclick="toggleCurtain('move_curtain?position=close&api_secret=' + apiSecret)">Close Curtain</button>
+    <h4>Set Curtain Position</h4>
+    <button onclick="setCurtainPosition('open')">Set as Open</button>
+    <button onclick="setCurtainPosition('close')">Set as Closed</button>
+  `;
+});
 </script>
 </body>
 </html>
 )rawliteral";
 // Replaces placeholder with button section in your web page
 String processor(const String &var) {
-    if (var == "BUTTONPLACEHOLDER") {
-        String api_secret_param = "&api_secret=" + curtain_api_secret;
-        String buttons = "";
-        buttons += "<h4>Curtain</h4>";
-        buttons += "<button onclick=\"toggleCurtain('move_curtain?position=open" + api_secret_param + "')\">Open</button>";
-        buttons += "<button onclick=\"toggleCurtain('move_curtain?position=close" + api_secret_param + "')\">Close</button>";
-        return buttons;
+    if (var == "API_SECRET") {
+        return curtain_api_secret;
     }
     return String();
 }
@@ -144,18 +153,18 @@ void createServerEndpoints() {
 
     server.on("/move_curtain", HTTP_GET, [](AsyncWebServerRequest *request) {
         if (!(request->hasParam("position") && request->hasParam("api_secret"))) {
-          request->send(400, "text/plain", "You need 'position' and 'api_secret' params!");
-          return;
+            request->send(400, "text/plain", "You need 'position' and 'api_secret' params!");
+            return;
         }
 
         String requested_position = request->getParam("position")->value();
         String api_secret = request->getParam("api_secret")->value();
 
         if (api_secret != curtain_api_secret) {
-          request->send(401, "text/plain", "Not authorised to operate this heavy machinery!");
-          return;
+            request->send(401, "text/plain", "Not authorised to operate this heavy machinery!");
+            return;
         }
-        
+
         bool shouldOperate = false;
         if (requested_position == "open") {
             webControlOverride = OVERRIDE_OPEN_CURTAIN;
@@ -167,8 +176,34 @@ void createServerEndpoints() {
 
         if (shouldOperate) request->send(200, "text/plain", "OK");
         else {
-          request->send(400, "text/plain", "Curtain already at the requested position");
-          webControlOverride = OVERRIDE_NONE;
+            request->send(400, "text/plain", "Curtain already at the requested position");
+            webControlOverride = OVERRIDE_NONE;
+        }
+    });
+
+    // New endpoint to set curtain position
+    server.on("/set_curtain_position", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!(request->hasParam("position") && request->hasParam("api_secret"))) {
+            request->send(400, "text/plain", "You need 'position' and 'api_secret' params!");
+            return;
+        }
+
+        String requested_position = request->getParam("position")->value();
+        String api_secret = request->getParam("api_secret")->value();
+
+        if (api_secret != curtain_api_secret) {
+            request->send(401, "text/plain", "Not authorised to set curtain position!");
+            return;
+        }
+
+        if (requested_position == "open") {
+            curtainPosition = CURTAIN_OPENED;
+            request->send(200, "text/plain", "Curtain position set to open");
+        } else if (requested_position == "close") {
+            curtainPosition = CURTAIN_CLOSED;
+            request->send(200, "text/plain", "Curtain position set to closed");
+        } else {
+            request->send(400, "text/plain", "Invalid position value. Use 'open' or 'close'.");
         }
     });
 }
@@ -176,10 +211,7 @@ void beginOnlineServer() {
     server.begin();
 }
 
-void enableWebSerial() {
-    WebSerial.begin(&server);
-    WebSerial.msgCallback(processWebSerialInput);
-}
+
 void processWebSerialInput(uint8_t *data, size_t len) {
     WebSerial.println("Received Data...");
     String incomingMessage = "";
@@ -189,6 +221,10 @@ void processWebSerialInput(uint8_t *data, size_t len) {
     Serial.println(incomingMessage);
     if (incomingMessage == "gateway") WebSerial.println(WiFi.gatewayIP().toString());
     if (incomingMessage == "filename") WebSerial.println(__FILE__);
+}
+void enableWebSerial() {
+    WebSerial.begin(&server);
+    WebSerial.onMessage(processWebSerialInput);
 }
 
 void readButtonInputs() {
@@ -252,6 +288,12 @@ void setLEDState() {
     } else {
         digitalWrite(PIN_LED, LOW);
     }
+}
+
+void setupWebServer() {
+  createServerEndpoints();
+  enableWebSerial();
+  beginOnlineServer();
 }
 
 void setup() {
