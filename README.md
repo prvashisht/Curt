@@ -13,15 +13,6 @@ The project includes functionality for Over-The-Air (OTA) updates, allowing you 
 - Basic electronics components (resistors, capacitors, breadboard, jumper wires, etc.)
 - Arduino IDE for programming the ESP32
 
-## Libraries Used
-
-- Credentials.h: This file contains the WiFi SSID and password and other API/Secret credentials.
-- [CustomOTA.h](https://github.com/SensorsIot/ESP32-OTA): This library allows OTA firmware updates.
-- AsyncTCP.h: This library is used to create asynchronous TCP connections.
-- ESPAsyncWebServer.h: This library is used to create asynchronous web servers.
-- WebSerial.h: This library allows serial communication over a web interface.
-- [Stepper_Motor.h](https://github.com/prvashisht/Stepper_Motor): This library is used to control the stepper motor.
-
 ## Key Features
 
 - Physical buttons to open or close the curtain.
@@ -33,15 +24,21 @@ The project includes functionality for Over-The-Air (OTA) updates, allowing you 
 ## Installation
 
 1. Download or clone this repository.
-2. Open the script in the Arduino IDE.
-3. Make sure to install the necessary libraries (mentioned above).
-4. Upload the script to your ESP32.
+2. Open the project/directory in the [PlatformIO](https://platformio.org/).
+3. Add the custom libraries mentioned below.
+4. Build and upload the project to your ESP32 remotely.
+
+## Custom Libraries
+
+- Credentials.h: This file contains the WiFi SSID and password and other API/Secret credentials.
+- [CustomOTA.h](https://github.com/SensorsIot/ESP32-OTA): This library allows OTA firmware updates.
+- Store both these files in a folder and add them as a global dependency via env variable
 
 ## Usage
 
 Once the ESP32 is up and running, you can control the curtain using the physical buttons. Press the button once to open or close the curtain.
 
-To control the curtain remotely, connect your device to the same network as the ESP32 and navigate to its IP address in a web browser. Click the 'Open' or 'Close' buttons to control the curtain.
+To control the curtain remotely, connect your device to the same network as the ESP32 and navigate to its IP address in a web browser. Click the 'Open' or 'Close' buttons to control the curtain. As the logic to detect current open/close state is not implemented (at least on the hardware side for now for me), I added a second set of buttons to manually mark the current position of the curtain as open or closed.
 
 See the curtain in action [here](https://www.instagram.com/stories/highlights/17961398177593328/).
 
